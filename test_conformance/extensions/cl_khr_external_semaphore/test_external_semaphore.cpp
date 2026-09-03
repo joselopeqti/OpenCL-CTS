@@ -204,6 +204,15 @@ cl_int doTestImportExport(cl_device_id device, cl_context contexts[2],
 
     REQUIRE_EXTENSION("cl_khr_external_semaphore");
 
+    if (init_vulkan_device(1, &device))
+    {
+        log_info("Cannot initialise Vulkan. "
+                 "Skipping test.\n");
+        return TEST_SKIPPED_ITSELF;
+    }
+
+    VulkanDevice vkDevice;
+
     GET_PFN(device, clEnqueueSignalSemaphoresKHR);
     GET_PFN(device, clEnqueueWaitSemaphoresKHR);
     GET_PFN(device, clCreateSemaphoreWithPropertiesKHR);
@@ -238,6 +247,30 @@ cl_int doTestImportExport(cl_device_id device, cl_context contexts[2],
         import_handle_types.begin(), import_handle_types.end(),
         export_handle_types.begin(), export_handle_types.end(),
         std::back_inserter(import_export_handle_types));
+
+    // Filter to only handle types also supported by Vulkan
+    const std::vector<VulkanExternalSemaphoreHandleType>
+        vkSupportedHandleTypes =
+            getSupportedInteropExternalSemaphoreHandleTypes(device, vkDevice);
+
+    std::vector<cl_external_semaphore_handle_type_khr> vkSupportedClHandleTypes;
+    for (auto vkHandleType : vkSupportedHandleTypes)
+    {
+        vkSupportedClHandleTypes.push_back(
+            getCLSemaphoreTypeFromVulkanType(vkHandleType));
+    }
+
+    import_export_handle_types.erase(
+        std::remove_if(import_export_handle_types.begin(),
+                       import_export_handle_types.end(),
+                       [&vkSupportedClHandleTypes](
+                           cl_external_semaphore_handle_type_khr handle_type) {
+                           return std::find(vkSupportedClHandleTypes.begin(),
+                                            vkSupportedClHandleTypes.end(),
+                                            handle_type)
+                               == vkSupportedClHandleTypes.end();
+                       }),
+        import_export_handle_types.end());
 
     cl_context& context2 = contexts[1];
     cl_command_queue& queue1 = queues[0];
